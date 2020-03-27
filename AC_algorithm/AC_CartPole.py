@@ -13,14 +13,19 @@ env = gym.make("CartPole-v1")
 n_episodes = 100000
 max_t_steps = 200
 discount= 0.99
-ln_rate = 1e-2
+ln_rate = 1e-3
+#ln_rate_1 = 1e-3
+#ln_rate_2 = 1e-4
 
 actor = Actor_net(discount = discount).double()
-critic = Critic_NN(discount = discount).double()
+critic_1 = Critic_NN(discount = discount).double()
+critic_2 = Critic_NN(discount = discount,n_inputs = 5).double()
 
-parameters = list(actor.parameters()) + list(critic.parameters())
+parameters = list(actor.parameters()) + list(critic_1.parameters()) + list(critic_2.parameters())
 
 optimiser = opt.Adam(parameters,ln_rate)
+#optimiser_1 = opt.Adam(actor.parameters(),ln_rate_1)
+#optimiser_2 = opt.Adam(critic.parameters(),ln_rate_2 )
 
 av_return = []
 
@@ -48,18 +53,34 @@ for ep in range(n_episodes):
 
         n_state,rwd,done,_ = env.step(action.numpy())
 
-        advantage , critic_cost = critic.advantage(c_state,n_state,rwd,done) #
+
+
+
+        Q_value = critic_2(torch.cat([torch.from_numpy(c_state).view(-1),action.view(-1).double()]))
+
+        V_value = critic_1(torch.from_numpy(c_state))
+
+        advantage = rwd + Q_value - V_value
+
+        #advantage , critic_cost = critic.advantage(c_state,n_state,rwd,done) #
+
+        #print(advantage)
 
         rf_cost = actor.REINFORCE(lp_action,advantage,done)
 
-        #critic_cost = advantage**2
+        critic_cost = advantage**2
 
         loss = rf_cost + critic_cost
+
+        #optimiser_1.zero_grad()
+        #optimiser_2.zero_grad()
 
         optimiser.zero_grad()
 
         loss.backward()
 
+        #optimiser_1.step()
+        #optimiser_2.step()
         optimiser.step()
 
         with torch.no_grad():
