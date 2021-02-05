@@ -12,8 +12,8 @@ from torch.distributions import Categorical
 #from torch.distributions import Bernoulli
 
 
-from Vanilla_policy_gradient.Policy_network import Policy_net
-from Vanilla_policy_gradient.Baseline_net import Baseline_nn
+from Policy_gradient.Vanilla_policy_gradient.Policy_network import Policy_net
+from Policy_gradient.Vanilla_policy_gradient.Baseline_net import Baseline_nn
 
 n_episodes= 10000
 discount = 0.99
@@ -22,8 +22,8 @@ learning_rate = 1e-3
 batch_size = 1
 
 env = gym.make("CartPole-v1")
-pol_nn = Policy_net(output_size =2).double()
-base_nn = Baseline_nn().double()
+pol_nn = Policy_net(output_size =2)#.double()
+base_nn = Baseline_nn()#.double()
 
 criterion = torch.nn.MSELoss()
 
@@ -37,9 +37,9 @@ episode_overall_return = []
 for i in range(n_episodes):
 
     current_st = env.reset()
-    episode_rwd = torch.empty(0)
-    episode_lp_action = torch.empty(0).float() #[]
-    episode_states = np.empty(0)
+    episode_rwd = []
+    episode_lp_action = []
+    episode_states = torch.empty(0)
 
     t = 0
 
@@ -47,7 +47,10 @@ for i in range(n_episodes):
 
     for t in range(max_t_step): #max_t_step
 
-        episode_states= np.concatenate((episode_states,current_st),axis=0)
+        current_st = torch.FloatTensor([current_st])
+
+        episode_states = torch.cat([episode_states,current_st])
+
 
         mean_action = pol_nn(torch.tensor(current_st))
 
@@ -55,13 +58,13 @@ for i in range(n_episodes):
 
         action = d.sample()
 
-        episode_lp_action = torch.cat([episode_lp_action,torch.unsqueeze(d.log_prob(action).float(),dim=-1)])
+        episode_lp_action.append(d.log_prob(action))
 
         next_st, rwd, done, _ = env.step(int(action.numpy()))
 
-        episode_rwd = episode_rwd * discount
 
-        episode_rwd = torch.cat((episode_rwd,torch.tensor([rwd])),dim=-1)
+
+        episode_rwd.append(torch.FloatTensor([rwd]))
 
 
         if done:
@@ -71,24 +74,32 @@ for i in range(n_episodes):
 
 
 
-    predicted_value = base_nn(torch.tensor(episode_states.reshape(-1,4)))
+    predicted_value = base_nn(episode_states.view(-1,4))
 
 
-    #episode_rwd = np.flip(np.cumsum(np.flip(episode_rwd)))
+    episode_rwd = torch.cat(episode_rwd)
 
-    episode_rwd = torch.flip(torch.cumsum(torch.flip(episode_rwd, (0,)), 0), (0,))
+    episode_lp_action = torch.cat(episode_lp_action)
+
+    episode_rwd = pol_nn.compute_returns(episode_rwd,discount)
 
 
     advantage = episode_rwd.view(-1) - predicted_value.view(-1) # v_value
 
 
+
     # Update policy net
 
+
+
     policy_c = sum(pol_nn.REINFORCE(episode_lp_action,advantage))
+
+
 
     baseline_c = sum(torch.pow(advantage, 2))
 
     loss =  policy_c + baseline_c  #pol_nn.REINFORCE(episode_lp_action[e],advantage) + torch.pow(episode_rwd[e] - episode_v_value[e], 2)
+
 
     optimiser.zero_grad()
 

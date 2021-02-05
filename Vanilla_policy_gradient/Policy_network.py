@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
-
+import numpy as np
 
 
 
@@ -34,3 +34,11 @@ class Policy_net(nn.Module):
         return Policy_cost
 
 
+    def compute_returns(self, rwds, discounts):
+
+
+        discounts = (discounts**(torch.FloatTensor(range(len(rwds)))))
+
+
+
+        return torch.flip(torch.cumsum(torch.flip(discounts * rwds, dims=(0,)), dim=0), dims=(0,)) / discounts

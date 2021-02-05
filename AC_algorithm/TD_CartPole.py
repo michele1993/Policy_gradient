@@ -4,8 +4,8 @@ import torch.optim as opt
 
 from torch.distributions import Categorical
 
-from AC_algorithm.TD_Actor_NN import Actor_net
-from AC_algorithm.Critic_NN import Critic_NN
+from Policy_gradient.AC_algorithm.TD_Actor_NN import Actor_net
+from Policy_gradient.AC_algorithm.Critic_NN import Critic_NN
 
 
 env = gym.make("CartPole-v1")
