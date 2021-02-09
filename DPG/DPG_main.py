@@ -5,30 +5,32 @@ import random
 
 from Policy_gradient.DPG.DPG_Actor_NN import Actor_NN
 from Policy_gradient.DPG.DPG_Critic_NN import Critic_NN
+from Policy_gradient.DPG.Van_Memory_Buffer import V_Memory_B
 
 n_episodes = 10000
-Buffer_size = 10000
-start_update = 500
-batch_size = 30
+batch_size = 64
+start_update = 100
 max_t_steps = 200
-discount= 0.99
-ln_rate_c = 0.001
-ln_rate_a = 0.0001
+discount= 0.9
+ln_rate_c = 0.0001 # 0.0001
+ln_rate_a = 0.00005 # 0.00005
 ep_print = 50
-decay_upd = 0.1 # decay for polyak average
+decay_upd = 0.9999 #.99999 # decay for polyak average
 
 env = gym.make("Pendulum-v0")
 
+rpl_buffer = V_Memory_B(batch_size = batch_size)
+
 #Initialise actor
-agent = Actor_NN().double()
-target_agent = Actor_NN().double()
+agent = Actor_NN(ln_rate = ln_rate_a).double()
+target_agent = Actor_NN(ln_rate = 0).double()
 
 target_agent.load_state_dict(agent.state_dict())
 target_agent.freeze_params()
 
 # Initialise two critic NN one to be the fixed target and the other to be trained for stability
-critic_target = Critic_NN().double()
-critic_nn = Critic_NN().double()
+critic_target = Critic_NN(ln_rate =0 ).double()
+critic_nn = Critic_NN(ln_rate = ln_rate_c).double()
 
 # Make sure two critic NN have the same initial parameters
 critic_target.load_state_dict(critic_nn.state_dict())
@@ -38,11 +40,13 @@ critic_target.freeze_params()
 
 
 #Initialise the replay buffer
-rpl_buffer = []
-eps_acc = []
+total_acc = []
+ep_rwd = []
+critic_losses = []
 
-
-buffer_c_size = 0
+# Delete
+Q_target = 0
+Q_estimate = 0
 
 for ep in range(n_episodes):
 
@@ -52,46 +56,34 @@ for ep in range(n_episodes):
 
         # Perform initial random exploration
         if ep > start_update:
+
             with torch.no_grad():
+
                 det_action = agent(torch.from_numpy(c_state))
-                stocasticity = torch.randn(1) * 0.5
-                action = (det_action + stocasticity)
-
+                stocasticity = torch.randn(1) * 0.25#0.1
+                action = torch.clamp(det_action + stocasticity,-2,2)
 
         else:
 
-            action = (torch.randn(1,dtype = torch.double) * 2)
+            action = torch.clamp((torch.randn(1,dtype = torch.double) * 2),-2,2)
 
 
-        n_state, rwd, done, _ = env.step(action.numpy())
+
+        n_s,rwd,dn,_ = env.step(action.numpy())
+
+        ep_rwd.append(rwd)
 
 
-        # Check if the replay buffer is full
-        if len(rpl_buffer) <= Buffer_size:
+        rpl_buffer.store_transition(c_state,action,rwd,n_s,dn)
 
-            rpl_buffer.append((c_state,action, rwd, n_state,done))
-
-        # if full, start replacing values from the first element
-        else:
-
-            rpl_buffer[buffer_c_size] = (c_state,action, rwd, n_state,done)
-            buffer_c_size+=1
-
-            # Need to restart indx when reach end of list
-            if buffer_c_size == Buffer_size:
-
-                buffer_c_size = 0
-
-
-        c_state = n_state
+        c_state = n_s
 
 
         # Check if it's time to update
-        if ep > start_update:
+        if  ep > start_update: #t%25 == 0 and
 
             # Randomly sample batch of transitions from buffer
-            spl_transitions = random.sample(rpl_buffer,batch_size)
-            b_spl_c_state, b_spl_a, b_spl_rwd, b_spl_n_state, b_spl_done = zip(*spl_transitions)
+            b_spl_c_state, b_spl_a, b_spl_rwd,b_spl_n_state, b_spl_done = rpl_buffer.sample_transition()
 
             # convert everything to tensor
             b_spl_c_state = torch.tensor(b_spl_c_state)
@@ -99,18 +91,27 @@ for ep in range(n_episodes):
             b_spl_n_state = torch.tensor(b_spl_n_state)
             b_spl_done = torch.tensor(b_spl_done)
 
+
             # Create input for target critic, based on next state and the optimal action there
             trg_crit_inpt = torch.cat([b_spl_n_state, target_agent(b_spl_n_state)],dim=1)#
+
+
             # Compute Q target value
             Q_target = b_spl_rwd + discount * (~b_spl_done) * critic_target(trg_crit_inpt).squeeze() # squeeze so that all dim in equation match for element-wise operations
+
+
 
             # Compute Q estimate
             b_spl_a = torch.stack(b_spl_a) # need to increase dim to have same size as states
             critic_nn_inpt = torch.cat([b_spl_c_state,b_spl_a],dim=1)
+
+
             Q_estimate = critic_nn(critic_nn_inpt).squeeze() # squeeze to have same dim as Q_target
 
             # Update critic
-            critic_nn.update(Q_target, Q_estimate)
+            critic_loss = critic_nn.update(Q_target, Q_estimate)
+            critic_losses.append(critic_loss.detach())
+
 
             # Update actor
             actor_loss_inpt = torch.cat([b_spl_c_state,agent(b_spl_c_state)],dim=1)
@@ -123,13 +124,30 @@ for ep in range(n_episodes):
             critic_target.soft_update(critic_nn,decay_upd)
 
 
-    eps_acc.append(rwd)
+    # if ep > start_update:
+    #     print("estimate: ",torch.mean(Q_estimate**2))
+    #     print("Target: ",torch.mean(Q_target**2))
+    #     print("loss", critic_loss)
 
-    if ep % ep_print == 0:
+    total_acc.append(sum(ep_rwd)/max_t_steps) # store rwd
+    ep_rwd = []
+
+    # print("Target",Q_target)
+    # print("Estim",Q_estimate, '\n')
+
+
+    if ep % ep_print == 0 and ep > 100:
 
         print("ep: ", ep)
-        print("final aver accuracy: ",sum(eps_acc) / ep_print)
-        eps_acc = []
+        print("Aver accuracy: ",sum(total_acc) / ep_print)
+        print("Critic loss: ", sum(critic_losses)/ (ep_print*max_t_steps))
+        # print("Q target:", critic_target(trg_crit_inpt).squeeze())
+        # b = torch.tensor([torch.norm(i) for i in critic_target.parameters()])
+        # print(torch.mean(b))
+        # c = torch.tensor([torch.norm(i) for i in critic_nn.parameters()])
+        # print(torch.mean(c))
+        total_acc = []
+        critic_losses = []
 
 
 

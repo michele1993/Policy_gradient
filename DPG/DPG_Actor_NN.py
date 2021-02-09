@@ -6,7 +6,7 @@ import torch.optim as opt
 
 class Actor_NN(nn.Module):
 
-    def __init__(self, Input_size=3, Hidden_size=116, Output_size=1,ln_rate = 1e-3):
+    def __init__(self, Input_size=3, Hidden_size=56, Output_size=1,ln_rate = 1e-3):
 
         super().__init__()
         self.l1 = nn.Linear(Input_size, Hidden_size)
@@ -22,6 +22,7 @@ class Actor_NN(nn.Module):
 
         return x
 
+
     def freeze_params(self):
 
         for params in self.parameters():
@@ -35,10 +36,15 @@ class Actor_NN(nn.Module):
         loss.backward()
         self.optimiser.step()
 
+    def copy_weights(self, estimate):
+
+        for t_param, e_param in zip(self.parameters(), estimate.parameters()):
+            t_param.data.copy_(e_param.data)
+
     def soft_update(self, estimate, decay):
 
         with torch.no_grad():
 
             # do polyak averaging to update target NN weights
             for t_param, e_param in zip(self.parameters(),estimate.parameters()):
-                t_param += (1 - decay) * e_param
+                t_param.data.copy_(t_param.data * decay + (1 - decay) * e_param.data)
