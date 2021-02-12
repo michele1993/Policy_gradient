@@ -3,7 +3,7 @@ import random
 
 class V_Memory_B:
 
-    def __init__(self,batch_size = 30,size = 50000):
+    def __init__(self,batch_size = 64,size = 100000):
 
         self.size = size
         self.batch_size = batch_size

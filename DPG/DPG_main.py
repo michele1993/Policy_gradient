@@ -3,19 +3,19 @@ import torch
 import random
 
 
-from Policy_gradient.DPG.DPG_Actor_NN import Actor_NN
-from Policy_gradient.DPG.DPG_Critic_NN import Critic_NN
-from Policy_gradient.DPG.Van_Memory_Buffer import V_Memory_B
+from DPG.DPG_Actor_NN import Actor_NN
+from DPG.DPG_Critic_NN import Critic_NN
+from DPG.Van_Memory_Buffer import V_Memory_B
 
-n_episodes = 10000
+n_episodes = 250
 batch_size = 64
-start_update = 100
+start_update = 64
 max_t_steps = 200
-discount= 0.9
-ln_rate_c = 0.0001 # 0.0001
-ln_rate_a = 0.00005 # 0.00005
+discount= 0.99
+ln_rate_c = 0.002 # 0.0001
+ln_rate_a = 0.001 # 0.00005
 ep_print = 50
-decay_upd = 0.9999 #.99999 # decay for polyak average
+decay_upd = 0.005 #.99999 # decay for polyak average
 
 env = gym.make("Pendulum-v0")
 
@@ -55,17 +55,15 @@ for ep in range(n_episodes):
     for t in range(max_t_steps):
 
         # Perform initial random exploration
-        if ep > start_update:
+        #if ep > start_update:
 
-            with torch.no_grad():
+        det_action = agent(torch.from_numpy(c_state)).detach()
+        stocasticity = torch.randn(1) * 0.2#0.1
+        action = torch.clamp(det_action + stocasticity,-2,2)
 
-                det_action = agent(torch.from_numpy(c_state))
-                stocasticity = torch.randn(1) * 0.25#0.1
-                action = torch.clamp(det_action + stocasticity,-2,2)
+        #else:
 
-        else:
-
-            action = torch.clamp((torch.randn(1,dtype = torch.double) * 2),-2,2)
+            #action = torch.clamp((torch.randn(1,dtype = torch.double) * 2),-2,2)
 
 
 
@@ -93,20 +91,20 @@ for ep in range(n_episodes):
 
 
             # Create input for target critic, based on next state and the optimal action there
-            trg_crit_inpt = torch.cat([b_spl_n_state, target_agent(b_spl_n_state)],dim=1)#
+            #trg_crit_inpt = torch.cat([b_spl_n_state, target_agent(b_spl_n_state)],dim=1)#
 
 
             # Compute Q target value
-            Q_target = b_spl_rwd + discount * (~b_spl_done) * critic_target(trg_crit_inpt).squeeze() # squeeze so that all dim in equation match for element-wise operations
+            Q_target = b_spl_rwd + discount * (~b_spl_done) * critic_target(b_spl_n_state,target_agent(b_spl_n_state)).squeeze() # squeeze so that all dim in equation match for element-wise operations
 
 
 
             # Compute Q estimate
             b_spl_a = torch.stack(b_spl_a) # need to increase dim to have same size as states
-            critic_nn_inpt = torch.cat([b_spl_c_state,b_spl_a],dim=1)
+            #critic_nn_inpt = torch.cat([b_spl_c_state,b_spl_a],dim=1)
 
 
-            Q_estimate = critic_nn(critic_nn_inpt).squeeze() # squeeze to have same dim as Q_target
+            Q_estimate = critic_nn(b_spl_c_state, b_spl_a).squeeze() # squeeze to have same dim as Q_target
 
             # Update critic
             critic_loss = critic_nn.update(Q_target, Q_estimate)
@@ -114,8 +112,8 @@ for ep in range(n_episodes):
 
 
             # Update actor
-            actor_loss_inpt = torch.cat([b_spl_c_state,agent(b_spl_c_state)],dim=1)
-            actor_loss = - critic_nn(actor_loss_inpt)
+            #actor_loss_inpt = torch.cat([b_spl_c_state,agent(b_spl_c_state)],dim=1)
+            actor_loss = - critic_nn(b_spl_c_state,agent(b_spl_c_state))
             agent.update(actor_loss)
 
 
@@ -136,7 +134,7 @@ for ep in range(n_episodes):
     # print("Estim",Q_estimate, '\n')
 
 
-    if ep % ep_print == 0 and ep > 100:
+    if ep % ep_print == 0 and ep > start_update:
 
         print("ep: ", ep)
         print("Aver accuracy: ",sum(total_acc) / ep_print)
@@ -148,6 +146,22 @@ for ep in range(n_episodes):
         # print(torch.mean(c))
         total_acc = []
         critic_losses = []
+
+
+# Test
+
+c_state = env.reset()
+env.render()
+for t in range(max_t_steps):
+
+    det_action = agent(torch.from_numpy(c_state)).detach()
+    n_s,rwd,dn,_ = env.step(det_action.numpy())
+    print(rwd)
+    c_state = n_s
+
+
+
+
 
 
 
