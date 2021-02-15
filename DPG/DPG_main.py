@@ -12,10 +12,10 @@ batch_size = 64
 start_update = 64
 max_t_steps = 200
 discount= 0.99
-ln_rate_c = 0.002 # 0.0001
-ln_rate_a = 0.001 # 0.00005
+ln_rate_c = 0.002
+ln_rate_a = 0.001
 ep_print = 50
-decay_upd = 0.005 #.99999 # decay for polyak average
+decay_upd = 0.005
 
 env = gym.make("Pendulum-v0")
 
@@ -54,28 +54,17 @@ for ep in range(n_episodes):
 
     for t in range(max_t_steps):
 
-        # Perform initial random exploration
-        #if ep > start_update:
-
         det_action = agent(torch.from_numpy(c_state)).detach()
-        stocasticity = torch.randn(1) * 0.2#0.1
+        stocasticity = torch.randn(1) * 0.2#
         action = torch.clamp(det_action + stocasticity,-2,2)
-
-        #else:
-
-            #action = torch.clamp((torch.randn(1,dtype = torch.double) * 2),-2,2)
-
-
 
         n_s,rwd,dn,_ = env.step(action.numpy())
 
         ep_rwd.append(rwd)
 
-
         rpl_buffer.store_transition(c_state,action,rwd,n_s,dn)
 
         c_state = n_s
-
 
         # Check if it's time to update
         if  ep > start_update: #t%25 == 0 and
@@ -98,12 +87,8 @@ for ep in range(n_episodes):
             Q_target = b_spl_rwd + discount * (~b_spl_done) * critic_target(b_spl_n_state,target_agent(b_spl_n_state)).squeeze() # squeeze so that all dim in equation match for element-wise operations
 
 
-
             # Compute Q estimate
             b_spl_a = torch.stack(b_spl_a) # need to increase dim to have same size as states
-            #critic_nn_inpt = torch.cat([b_spl_c_state,b_spl_a],dim=1)
-
-
             Q_estimate = critic_nn(b_spl_c_state, b_spl_a).squeeze() # squeeze to have same dim as Q_target
 
             # Update critic
@@ -112,7 +97,6 @@ for ep in range(n_episodes):
 
 
             # Update actor
-            #actor_loss_inpt = torch.cat([b_spl_c_state,agent(b_spl_c_state)],dim=1)
             actor_loss = - critic_nn(b_spl_c_state,agent(b_spl_c_state))
             agent.update(actor_loss)
 
@@ -122,16 +106,9 @@ for ep in range(n_episodes):
             critic_target.soft_update(critic_nn,decay_upd)
 
 
-    # if ep > start_update:
-    #     print("estimate: ",torch.mean(Q_estimate**2))
-    #     print("Target: ",torch.mean(Q_target**2))
-    #     print("loss", critic_loss)
 
     total_acc.append(sum(ep_rwd)/max_t_steps) # store rwd
     ep_rwd = []
-
-    # print("Target",Q_target)
-    # print("Estim",Q_estimate, '\n')
 
 
     if ep % ep_print == 0 and ep > start_update:
@@ -139,11 +116,6 @@ for ep in range(n_episodes):
         print("ep: ", ep)
         print("Aver accuracy: ",sum(total_acc) / ep_print)
         print("Critic loss: ", sum(critic_losses)/ (ep_print*max_t_steps))
-        # print("Q target:", critic_target(trg_crit_inpt).squeeze())
-        # b = torch.tensor([torch.norm(i) for i in critic_target.parameters()])
-        # print(torch.mean(b))
-        # c = torch.tensor([torch.norm(i) for i in critic_nn.parameters()])
-        # print(torch.mean(c))
         total_acc = []
         critic_losses = []
 
@@ -160,15 +132,6 @@ for t in range(max_t_steps):
     c_state = n_s
 
 
-
-
-
-
-
-# b = [i.clone() for i in critic_target.parameters()]
-# c = [i.clone() for i in critic_target.parameters()]
-# d = [torch.eq(e, f) for e, f in zip(c, b)]
-# print(d, "\n")
 
 
 

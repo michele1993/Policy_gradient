@@ -58,4 +58,4 @@ class Critic_NN(nn.Module):
         with torch.no_grad():
           # do polyak averaging to update target NN weights
             for t_param, e_param in zip(self.parameters(),estimate.parameters()):
-                t_param.data.copy_( e_param.data *  decay + (1 - decay) * t_param.data)
+                t_param.data.copy_( e_param.data * decay + (1 - decay) * t_param.data)
